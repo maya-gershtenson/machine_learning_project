@@ -1,0 +1,144 @@
+---
+title: "Practical Machine Learning Course Project"
+author: "Maya Gershtenson"
+date: "2025-12-28"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(dplyr)
+library(caret)
+```
+
+## Overview
+
+The goal of this project is to predict the manner in which participants performed an exercise. 
+This is represented by the **classe** variable. Predictions will be made using data 
+from accelerometers worn on the belt, forearm, arm, and dumbbell of participants. 
+There are five different classe outcome categories.
+
+```{r}
+
+# Load the training data
+train <- read.csv("C:/Users/MGershtenson/Downloads/pml-training.csv")
+
+# Convert classe to factor
+train$classe <- as.factor(train$classe)
+summary(train$classe)
+
+```
+
+## Data Cleaning and Preparation
+
+The dataset contains 160 variables, so as a first step we need to pare this down. I will  
+- remove predictors with near-zero variance. Such variables provide little value in making predictions.  
+- remove predictors with high proportions of missing values  
+- remove variables that will not be useful for prediction, such as user names and timestamps  
+
+```{r}
+
+# Get indices of variables with near-zero variance
+nzv_indices <- nearZeroVar(train)
+nzv_indices
+
+# Remove the variables with near-zero variance
+train_filter <- train[, -nzv_indices]
+
+# Get proportion of missing data for each variable
+missing_proportions <- colMeans(is.na(train_filter))
+missing_proportions
+table(missing_proportions)
+
+# Since all variables have either 0 or 98% missing data,
+# remove the variables with any missing data
+train_filter <- train_filter[, colSums(is.na(train_filter)) == 0]
+
+# Remove variables with 'timestamp' in column name
+columns_to_keep <- names(train_filter)[!grepl("timestamp", names(train_filter))]
+columns_to_keep
+train_filter <- train_filter[, columns_to_keep]
+
+# Remove other unhelpful variables
+train_filter <- train_filter[, -c(1, 2, 3)]
+
+```
+
+## Plots
+
+I will plot a few combinations of predictors to get a sense of how the data look 
+and which variables might be important in predicting classe.
+
+``` {r}
+qplot(roll_belt, pitch_forearm, colour=classe, data=train_filter)
+```
+
+``` {r}
+qplot(roll_forearm, pitch_forearm, colour=classe, data=train_filter)
+```
+
+``` {r}
+qplot(total_accel_belt, gyros_arm_x, colour=classe, data=train_filter)
+```
+
+## Cross-Validation
+
+I will use cross-validation, splitting the training data into 5 folds 
+and training the model on different subsets of the data. This value of k for 
+k-fold cross-validation will strike a balance between the high variance 
+obtained with a larger k and the high bias obtained with a smaller k.
+
+``` {r}
+
+train_control <- trainControl(method="cv", number=5)
+
+```
+
+## Model Training
+
+I chose to use a classification tree because  
+- it is highly interpretable  
+- it performs well in nonlinear settings  
+
+I will use all the variables remaining after the data cleaning steps above to predict classe. 
+These variables are all viable predictors because they do not contain any missing data, 
+and they do not have near-zero variance.
+I will also include cross-validation, as described above, in training the model.
+
+```{r}
+
+# Fit the classification tree
+fit <- train(classe ~ ., method="rpart", data=train_filter, trControl = train_control)
+
+# Plot the classification tree
+plot(fit$finalModel, uniform=TRUE, main="Classification Tree")
+text(fit$finalModel, use.n=TRUE, all=TRUE, cex=.5)
+
+```
+
+## Expected Out-of-Sample Error
+
+``` {r}
+
+# Get the confusion matrix for the classification tree
+confusionMatrix(fit)
+
+```
+
+Based on the confusion matrix, the accuracy of the cross-validated classification tree 
+is not very good, just above 50%. The expected out-of-sample error is *1 - accuracy*, or 49.8%.
+
+## Predict Test Cases
+
+Now I will load the testing dataset and use the classification tree built on the 
+training dataset to predict **classe** in the testing dataset.
+
+```{r}
+
+# Load the testing data
+test <- read.csv("C:/Users/MGershtenson/Downloads/pml-testing.csv")
+
+# Predict new values
+predict(fit, newdata=test)
+
+```
